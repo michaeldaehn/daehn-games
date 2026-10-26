@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daehn Games: Upcoming Fixtures</title>
+<style>
+  :root { --ink:#1a1a1a; --paper:#fafafa; --card:#ffffff; --line:#d8d8d8; --accent:#33415c; --accent-soft:#e8ecf3; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Roboto, "Segoe UI", Arial, sans-serif; background:var(--paper); color:var(--ink); }
+  header { position: sticky; top:0; background:var(--accent); color:#fff; padding:14px 18px 12px; box-shadow:0 2px 6px rgba(0,0,0,.25); z-index:5; }
+  header h1 { margin:0; font-size:22px; font-weight:700; letter-spacing:.2px; }
+  header .sub { margin-top:2px; font-size:13px; opacity:.92; }
+  header .updated { margin-top:4px; font-size:12px; opacity:.8; }
+  main { max-width:760px; margin:0 auto; padding:10px 14px 30px; }
+  .teams { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:4px 9px 4px 4px; border-radius:999px; border:1px solid var(--line); background:var(--card); }
+  .chip .ini { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:9px; font-weight:800; color:#fff; background:var(--accent); }
+  .chip.secondary .ini { background:#fff; color:var(--accent); border:1.5px solid var(--accent); }
+  .chip.secondary { font-weight:500; }
+  h2.day { font-size:15px; margin:20px 0 8px; padding-bottom:5px; border-bottom:2px solid var(--accent); color:var(--accent); text-transform:uppercase; letter-spacing:.6px; }
+  .game { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:9px; display:flex; gap:12px; align-items:flex-start; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .game .ini { flex:0 0 auto; width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; color:#fff; background:var(--accent); }
+  .game.secondary .ini { background:var(--accent-soft); color:var(--accent); border:1.5px solid var(--accent); }
+  .game .who { font-size:16px; font-weight:700; line-height:1.25; }
+  .game .who .vsat { font-weight:500; color:#444; }
+  .game .meta { margin-top:3px; font-size:13.5px; line-height:1.45; color:var(--ink); }
+  .game .meta .time { font-weight:700; }
+  .empty { margin:28px 0; font-size:15px; }
+  footer { max-width:760px; margin:0 auto; padding:0 14px 26px; font-size:12.5px; color:#444; }
+  footer a { color:var(--accent); }
+  .err { background:#fdecea; border:1px solid #e0a49e; border-radius:8px; padding:12px 14px; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Daehn Games</h1>
+  <div class="sub">Upcoming games for our teams. Fixtures only, no scores, ever.</div>
+  <div class="updated" id="updated">Loading the latest schedule...</div>
+</header>
+<main>
+  <div class="teams" id="teams"></div>
+  <div id="days"></div>
+</main>
+<footer>
+  A fan-made family schedule page, updated every morning. Times shown in Pacific Time.
+  <br>More from the Daehn family at <a href="https://michaeldaehn.com">michaeldaehn.com</a>.
+</footer>
+<script>
+(function () {
+  var TZ = "America/Los_Angeles";
+  var dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric" });
+  var dayKeyFmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+  var timeFmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+  var stampFmt = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  fetch("fixtures.json", { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error("fixtures unavailable"); return r.json(); })
+    .then(function (data) {
+      var now = new Date();
+      document.getElementById("updated").textContent =
+        "Updated " + stampFmt.format(new Date(data.generated_at));
+
+      var teamsEl = document.getElementById("teams");
+      data.teams.forEach(function (t) {
+        var chip = el("span", "chip" + (t.is_primary ? "" : " secondary"));
+        chip.appendChild(el("span", "ini", t.initials));
+        chip.appendChild(document.createTextNode(t.name));
+        teamsEl.appendChild(chip);
+      });
+
+      var upcoming = data.fixtures.filter(function (f) { return new Date(f.starts_at) > now; });
+      var daysEl = document.getElementById("days");
+      if (!upcoming.length) {
+        daysEl.appendChild(el("p", "empty", "No games in the next two weeks. Check back soon."));
+        return;
+      }
+
+      var todayKey = dayKeyFmt.format(now);
+      var tomorrowKey = dayKeyFmt.format(new Date(now.getTime() + 24 * 3600 * 1000));
+      var groups = [], byKey = {};
+      upcoming.forEach(function (f) {
+        var k = dayKeyFmt.format(new Date(f.starts_at));
+        if (!byKey[k]) { byKey[k] = []; groups.push(k); }
+        byKey[k].push(f);
+      });
+
+      groups.forEach(function (k) {
+        var games = byKey[k].slice().sort(function (a, b) {
+          if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+          return new Date(a.starts_at) - new Date(b.starts_at);
+        });
+        var label = (k === todayKey) ? "Today" : (k === tomorrowKey) ? "Tomorrow" : null;
+        var heading = label ? label + " · " + dayFmt.format(new Date(games[0].starts_at))
+                            : dayFmt.format(new Date(games[0].starts_at));
+        daysEl.appendChild(el("h2", "day", heading));
+        games.forEach(function (f) {
+          var team = data.teams.find(function (t) { return t.slug === f.team_slug; });
+          var card = el("div", "game" + (f.is_primary ? "" : " secondary"));
+          card.appendChild(el("div", "ini", team ? team.initials : "?"));
+          var body = el("div");
+          var who = el("div", "who");
+          who.appendChild(document.createTextNode(f.team + " "));
+          who.appendChild(el("span", "vsat", (f.home ? "vs. " : "at ") + f.opponent));
+          body.appendChild(who);
+          var meta = el("div", "meta");
+          var parts = [timeFmt.format(new Date(f.starts_at))];
+          if (f.league) parts.push(f.league);
+          if (f.venue) parts.push(f.venue);
+          parts.push(f.broadcast ? f.broadcast : "Broadcast TBD");
+          var timeSpan = el("span", "time", parts[0]);
+          meta.appendChild(timeSpan);
+          meta.appendChild(document.createTextNode(" · " + parts.slice(1).join(" · ")));
+          body.appendChild(meta);
+          card.appendChild(body);
+          daysEl.appendChild(card);
+        });
+      });
+    })
+    .catch(function () {
+      document.getElementById("updated").textContent = "Schedule temporarily unavailable.";
+      var d = document.getElementById("days");
+      var box = el("div", "err", "We could not load the schedule just now. Please try again in a little while.");
+      d.appendChild(box);
+    });
+})();
+</script>
+</body>
+</html>
